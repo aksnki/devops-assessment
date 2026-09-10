@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: devops-postgres
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops_password
+      POSTGRES_DB: devops_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops -d devops_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:4.10
+    container_name: devops-localstack
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+    container_name: devops-backend
+    environment:
+      APP_NAME: DevOps Assessment Backend
+      ENVIRONMENT: docker
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: devops
+      DB_PASSWORD: devops_password
+      DB_NAME: devops_db
+
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+
+      S3_ENDPOINT_URL: http://localstack:4566
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      S3_BUCKET_NAME: devops-assessment-bucket
+      PRESIGNED_URL_EXPIRATION_SECONDS: 300
+
+      CORS_ORIGINS: http://localhost:5173
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000/api
+    container_name: devops-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  localstack_data:
