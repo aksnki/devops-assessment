@@ -2,14 +2,19 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: devops-postgres
+    restart: unless-stopped
+
     environment:
       POSTGRES_USER: devops
       POSTGRES_PASSWORD: devops_password
       POSTGRES_DB: devops_db
+
     ports:
       - "5432:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
+
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U devops -d devops_db"]
       interval: 10s
@@ -19,14 +24,19 @@ services:
   localstack:
     image: localstack/localstack:4.10
     container_name: devops-localstack
+    restart: unless-stopped
+
     environment:
       SERVICES: s3
       AWS_DEFAULT_REGION: us-east-1
+
     ports:
       - "4566:4566"
+
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
+
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
       interval: 10s
@@ -37,6 +47,8 @@ services:
     build:
       context: ./backend
     container_name: devops-backend
+    restart: unless-stopped
+
     environment:
       APP_NAME: DevOps Assessment Backend
       ENVIRONMENT: docker
@@ -61,6 +73,17 @@ services:
     ports:
       - "8000:8000"
 
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/full')\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
     depends_on:
       postgres:
         condition: service_healthy
@@ -72,11 +95,16 @@ services:
       context: ./frontend
       args:
         VITE_API_BASE_URL: http://localhost:8000/api
+
     container_name: devops-frontend
+    restart: unless-stopped
+
     ports:
       - "5173:80"
+
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:
