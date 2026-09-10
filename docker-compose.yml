@@ -9,9 +9,6 @@ services:
       POSTGRES_PASSWORD: devops_password
       POSTGRES_DB: devops_db
 
-    ports:
-      - "5432:5432"
-
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -30,9 +27,6 @@ services:
       SERVICES: s3
       AWS_DEFAULT_REGION: us-east-1
 
-    ports:
-      - "4566:4566"
-
     volumes:
       - localstack_data:/var/lib/localstack
       - /var/run/docker.sock:/var/run/docker.sock
@@ -42,6 +36,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.s3.rule=Host(`s3.debyez.localhost`)"
+      - "traefik.http.routers.s3.entrypoints=web"
+      - "traefik.http.services.s3.loadbalancer.server.port=4566"
 
   backend:
     build:
@@ -64,14 +64,11 @@ services:
       AWS_REGION: us-east-1
 
       S3_ENDPOINT_URL: http://localstack:4566
-      S3_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      S3_PUBLIC_ENDPOINT_URL: http://s3.debyez.localhost
       S3_BUCKET_NAME: devops-assessment-bucket
       PRESIGNED_URL_EXPIRATION_SECONDS: 300
 
-      CORS_ORIGINS: http://localhost:5173
-
-    ports:
-      - "8000:8000"
+      CORS_ORIGINS: http://app.debyez.localhost
 
     healthcheck:
       test:
@@ -90,20 +87,53 @@ services:
       localstack:
         condition: service_healthy
 
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.debyez.localhost`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+
   frontend:
     build:
       context: ./frontend
       args:
-        VITE_API_BASE_URL: http://localhost:8000/api
+        VITE_API_BASE_URL: http://api.debyez.localhost/api
 
     container_name: devops-frontend
     restart: unless-stopped
 
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`app.debyez.localhost`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  traefik:
+    image: traefik:v3.5
+    container_name: devops-traefik
+    restart: unless-stopped
+
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+
     ports:
-      - "5173:80"
+      - "80:80"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
 
     depends_on:
       backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      localstack:
         condition: service_healthy
 
 volumes:
