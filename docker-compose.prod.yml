@@ -42,7 +42,7 @@ services:
       - "traefik.http.services.s3.loadbalancer.server.port=4566"
 
   backend:
-    image: aksck/devops-assessment-backend:f9eb56f1dd9b8d61f55c4efd079053d1edba229c
+    image: aksck/devops-assessment-backend:${IMAGE_TAG}
     restart: unless-stopped
 
     environment:
@@ -90,7 +90,7 @@ services:
       - "traefik.http.services.backend.loadbalancer.server.port=8000"
 
   frontend:
-    image: aksck/devops-assessment-frontend:f9eb56f1dd9b8d61f55c4efd079053d1edba229c
+    image: aksck/devops-assessment-frontend:${IMAGE_TAG}
     restart: unless-stopped
 
     depends_on:

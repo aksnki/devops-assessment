@@ -2,6 +2,6 @@
 .vscode/
 .idea/
 .DS_Store
-
+.env.prod
 # --- Local infra (populated by the attendee's DevOps task) --------------
 *.log
