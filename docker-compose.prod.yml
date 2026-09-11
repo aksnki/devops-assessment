@@ -1,0 +1,131 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: devops
+      POSTGRES_PASSWORD: devops_password
+      POSTGRES_DB: devops_db
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devops -d devops_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:4.10
+    restart: unless-stopped
+
+    environment:
+      SERVICES: s3
+      AWS_DEFAULT_REGION: us-east-1
+
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.s3.rule=Host(`s3.debyez.localhost`)"
+      - "traefik.http.routers.s3.entrypoints=web"
+      - "traefik.http.services.s3.loadbalancer.server.port=4566"
+
+  backend:
+    image: aksck/devops-assessment-backend:f9eb56f1dd9b8d61f55c4efd079053d1edba229c
+    restart: unless-stopped
+
+    environment:
+      APP_NAME: DevOps Assessment Backend
+      ENVIRONMENT: production
+
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: devops
+      DB_PASSWORD: devops_password
+      DB_NAME: devops_db
+
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+
+      S3_ENDPOINT_URL: http://localstack:4566
+      S3_PUBLIC_ENDPOINT_URL: http://s3.debyez.localhost
+      S3_BUCKET_NAME: devops-assessment-bucket
+      PRESIGNED_URL_EXPIRATION_SECONDS: 300
+
+      CORS_ORIGINS: http://app.debyez.localhost
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/full')\""
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`api.debyez.localhost`)"
+      - "traefik.http.routers.backend.entrypoints=web"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+
+  frontend:
+    image: aksck/devops-assessment-frontend:f9eb56f1dd9b8d61f55c4efd079053d1edba229c
+    restart: unless-stopped
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`app.debyez.localhost`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"
+
+  traefik:
+    image: traefik:v3.5
+    restart: unless-stopped
+
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+      localstack:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  localstack_data:
